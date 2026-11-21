@@ -190,11 +190,15 @@ Java_com_akijus_offlinellm_LlamaEngine_generateReply(JNIEnv * env, jobject /*thi
         llama_chat_message msgs[1];
         msgs[0].role = "user";
         msgs[0].content = prompt.c_str();
-        int32_t need = llama_chat_apply_template(g_model, nullptr, msgs, 1, true, nullptr, 0);
-        if (need > 0 && need < 32768) {
-            std::vector<char> buf((size_t) need + 1);
-            int32_t n = llama_chat_apply_template(g_model, nullptr, msgs, 1, true, buf.data(), (int32_t) buf.size());
-            if (n > 0) formatted.assign(buf.data(), (size_t) n);
+        // API baru: ambil string template dari model dulu, baru terapkan
+        const char * tmpl = llama_model_chat_template(g_model, nullptr);
+        if (tmpl) {
+            int32_t need = llama_chat_apply_template(tmpl, msgs, 1, true, nullptr, 0);
+            if (need > 0 && need < 32768) {
+                std::vector<char> buf((size_t) need + 1);
+                int32_t n = llama_chat_apply_template(tmpl, msgs, 1, true, buf.data(), (int32_t) buf.size());
+                if (n > 0) formatted.assign(buf.data(), (size_t) n);
+            }
         }
         if (formatted.empty()) formatted = prompt; // fallback: prompt mentah
     }
