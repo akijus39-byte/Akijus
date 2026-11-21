@@ -4,7 +4,10 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.view.Gravity
+import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -63,7 +66,7 @@ class MainActivity : AppCompatActivity() {
             }
             selectedPath = dst.absolutePath
             binding.tvSelectedModel.text = "File: " + dst.absolutePath
-            binding.tvStatus.text = "Status: file dipilih, klik LOAD MODEL"
+            setStatus("Status: file dipilih, klik LOAD MODEL", "Belum di-load")
             toast("Disalin ke: " + dst.absolutePath)
         } catch (e: Exception) {
             toast("Gagal salin file: " + e.message)
@@ -101,6 +104,8 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         bg = Executors.newSingleThreadExecutor()
+        gradientTitle(binding.tvTitle)
+        gradientTitle(binding.tvDrawerTitle)
 
         binding.btnMenu.setOnClickListener {
             binding.drawerLayout.openDrawer(GravityCompat.START)
@@ -117,7 +122,7 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
             setBusy(true)
-            binding.tvStatus.text = "Status: loading..."
+            setStatus("Status: loading...", "Memuat...")
             bg.execute {
                 try {
                     val ok = engine.initModel(path)
@@ -129,16 +134,21 @@ class MainActivity : AppCompatActivity() {
                     modelLoaded = ok
                     runOnUiThread {
                         setBusy(false)
-                        binding.tvStatus.text =
-                            if (ok) "Status: model OK" + (if (loraFiles.isNotEmpty()) " + ${loraFiles.size} LoRA" else "")
-                            else "Status: GAGAL load model. Cek file .gguf (butuh 1-2 GB RAM bebas)."
-                        if (!ok) toast("Gagal load model")
-                        else binding.drawerLayout.closeDrawer(GravityCompat.START)
+                        if (ok) {
+                            setStatus(
+                                "Status: model OK" + (if (loraFiles.isNotEmpty()) " + ${loraFiles.size} LoRA" else ""),
+                                "Model aktif"
+                            )
+                            binding.drawerLayout.closeDrawer(GravityCompat.START)
+                        } else {
+                            setStatus("Status: GAGAL load model. Cek file .gguf (butuh 1-2 GB RAM bebas).", "Gagal")
+                            toast("Gagal load model")
+                        }
                     }
                 } catch (e: Exception) {
                     runOnUiThread {
                         setBusy(false)
-                        binding.tvStatus.text = "Status: error " + e.message
+                        setStatus("Status: error " + e.message, "Gagal")
                     }
                 }
             }
@@ -231,8 +241,8 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnClearHistory.setOnClickListener {
             history.clear()
-            binding.tvOutput.text = "Riwayat telah dihapus."
-            binding.tvHistoryInfo.text = "Riwayat disimpan: 0 / $maxHistory pesan"
+            updateChatUI()
+            toast("Riwayat telah dihapus.")
             binding.drawerLayout.closeDrawer(GravityCompat.START)
         }
 
@@ -642,18 +652,73 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateChatUI() {
-        if (history.isEmpty()) {
-            binding.tvOutput.text = "Belum ada percakapan. Buka menu di kiri atas untuk memilih dan me-load model."
-        } else {
-            val sb = StringBuilder()
-            for ((role, text) in history) {
-                if (role == "Kamu") sb.append("Kamu:\n").append(text).append("\n\n")
-                else sb.append("AI:\n").append(text).append("\n\n")
-            }
-            binding.tvOutput.text = sb.toString().trim()
+        binding.chatListCtn.removeAllViews()
+        binding.chatCard.visibility = if (history.isEmpty()) View.GONE else View.VISIBLE
+        for ((role, text) in history) {
+            binding.chatListCtn.addView(if (role == "Kamu") userBubble(text) else aiBubble(text))
         }
-        binding.tvHistoryInfo.text = "Riwayat disimpan: ${history.size} / $maxHistory pesan"
+        binding.tvHistoryInfo.text = "Riwayat disimpan: ${history.size} / $maxHistory"
         binding.scrollChat.post { binding.scrollChat.fullScroll(android.view.View.FOCUS_DOWN) }
+    }
+
+    private fun dp(n: Int): Int = (n * resources.displayMetrics.density).toInt()
+
+    // Bubble user ala Gemini: kanan, abu rounded. AI: teks polos kiri.
+    private fun userBubble(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(0xFFF4F7FC.toInt())
+            textSize = 14f
+            setBackgroundResource(R.drawable.bubble_user)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.END
+                topMargin = dp(5)
+                bottomMargin = dp(5)
+                marginStart = dp(48)
+            }
+        }
+    }
+
+    private fun aiBubble(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(0xFFC3CCD9.toInt())
+            textSize = 14f
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.START
+                topMargin = dp(5)
+                bottomMargin = dp(5)
+                marginEnd = dp(24)
+            }
+        }
+    }
+
+    private fun setStatus(main: String, pill: String) {
+        binding.tvStatus.text = main
+        binding.tvPill.text = pill
+    }
+
+    private fun gradientTitle(tv: TextView) {
+        tv.post {
+            tv.paint.shader = LinearGradient(
+                0f, 0f, 0f, tv.textSize,
+                intArrayOf(
+                    0xFFF15DF0.toInt(),
+                    0xFF8B5CF6.toInt(),
+                    0xFF3FD8F5.toInt()
+                ),
+                null, Shader.TileMode.CLAMP
+            )
+            tv.invalidate()
+        }
     }
 
     private fun setBusy(busy: Boolean, generating: Boolean = false) {
@@ -662,9 +727,15 @@ class MainActivity : AppCompatActivity() {
         binding.btnPickFile.isEnabled = !busy
         binding.btnAddLora.isEnabled = !busy
         binding.btnAddBook.isEnabled = !busy
-        binding.btnGenerate.text = if (busy && generating) "..." else "KIRIM"
+        binding.btnGenerate.text = if (busy && generating) "..." else "↑"
         if (busy && generating) {
-            binding.tvOutput.text = binding.tvOutput.text.toString() + "\n\nAI:\nMenjawab..."
+            val tv = TextView(this).apply {
+                tag = "typing"
+                text = "AI:\nMenjawab..."
+                setTextColor(0xFFC3CCD9.toInt())
+                textSize = 14f
+            }
+            binding.chatListCtn.addView(tv)
             binding.scrollChat.post { binding.scrollChat.fullScroll(android.view.View.FOCUS_DOWN) }
         }
     }
