@@ -176,7 +176,8 @@ class MainActivity : AppCompatActivity() {
                 FileOutputStream(dst).use { out -> ins.copyTo(out) }
             }
             selectedPath = dst.absolutePath
-            binding.tvSelectedModel.text = "File: " + dst.absolutePath
+            val mb = dst.length() / 1048576
+            binding.tvSelectedModel.text = "File: " + dst.absolutePath + " (" + mb + " MB)"
             setStatus("Status: file dipilih, klik LOAD MODEL", "Belum di-load")
             // ganti model = ganti slot riwayat
             renderedConvId = null
@@ -234,6 +235,18 @@ class MainActivity : AppCompatActivity() {
             val path = selectedPath
             if (path.isNullOrBlank()) {
                 toast("Pilih file .gguf dulu")
+                return@setOnClickListener
+            }
+            val mf = File(path)
+            if (!ggufValid(mf)) {
+                val mb = if (mf.exists()) mf.length() / 1048576 else -1
+                setStatus(
+                    "Status: file model rusak/tidak lengkap" +
+                        (if (mb >= 0) " (" + mb + " MB, seharusnya ~400 MB)" else "") +
+                        ". Hapus lalu download ulang file .gguf.",
+                    "Gagal"
+                )
+                toast("File model rusak/tidak lengkap. Download ulang.")
                 return@setOnClickListener
             }
             setBusy(true)
@@ -327,14 +340,16 @@ class MainActivity : AppCompatActivity() {
             bg.execute {
                 try {
                     val hits = searchBooks(prompt, 3)
-                    if (strictMode && hits.isEmpty()) {
+                    // Tanpa buku, mode Ketat otomatis longgar: jawab dari model (biar tidak bisu)
+                    val effectiveStrict = strictMode && books.isNotEmpty()
+                    if (effectiveStrict && hits.isEmpty()) {
                         runOnUiThread {
                             setBusy(false)
                             addMessage("AI", refusalText)
                         }
                         return@execute
                     }
-                    val fullPrompt = if (strictMode) {
+                    val fullPrompt = if (effectiveStrict) {
                         buildStrictPrompt(hits, prompt)
                     } else {
                         buildFreePrompt(hits, prompt)
@@ -894,6 +909,22 @@ class MainActivity : AppCompatActivity() {
                 bottomMargin = dp(5)
                 marginEnd = dp(24)
             }
+        }
+    }
+
+    // Cek cepat file .gguf: ada, cukup besar, dan magic "GGUF".
+    // File hasil download kepotong (memori HP penuh) langsung ketahuan di sini.
+    private fun ggufValid(f: File): Boolean {
+        try {
+            if (!f.exists() || f.length() < 10 * 1024 * 1024) return false
+            val inp = java.io.FileInputStream(f)
+            val b = ByteArray(4)
+            val n = inp.read(b)
+            inp.close()
+            return n == 4 && b[0] == 'G'.code.toByte() && b[1] == 'G'.code.toByte() &&
+                b[2] == 'U'.code.toByte() && b[3] == 'F'.code.toByte()
+        } catch (_: Exception) {
+            return false
         }
     }
 
