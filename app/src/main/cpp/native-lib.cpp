@@ -14,14 +14,43 @@ static llama_context * g_ctx   = nullptr;
 static const llama_vocab * g_vocab = nullptr;
 static bool g_backend_init = false;
 
+// LoRA adapters (bisa banyak)
+static std::vector<llama_adapter_lora*> g_loras;
+static std::vector<float> g_loraScales;
+
+static void freeLorasLocked() {
+    for (auto * a : g_loras) {
+        if (a) llama_adapter_lora_free(a);
+    }
+    g_loras.clear();
+    g_loraScales.clear();
+}
+
+static bool applyLorasLocked() {
+    if (!g_ctx) return false;
+    if (g_loras.empty()) {
+        llama_set_adapters_lora(g_ctx, nullptr, 0, nullptr);
+        return true;
+    }
+    int32_t rc = llama_set_adapters_lora(g_ctx, g_loras.data(), g_loras.size(), g_loraScales.data());
+    if (rc != 0) {
+        LOGE("llama_set_adapters_lora failed: %d", (int) rc);
+        return false;
+    }
+    return true;
+}
+
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
 Java_com_akijus_offlinellm_LlamaEngine_initModel(JNIEnv * env, jobject /*thiz*/, jstring jpath) {
+    // model baru = adapters lama tidak valid lagi (ikut ke-free bersama model)
+    // jadi kosongkan dulu tanpa double-free: free eksplisit sebelum free model
     if (g_ctx) {
         llama_free(g_ctx);
         g_ctx = nullptr;
     }
+    freeLorasLocked();
     if (g_model) {
         llama_model_free(g_model);
         g_model = nullptr;
@@ -70,8 +99,68 @@ Java_com_akijus_offlinellm_LlamaEngine_initModel(JNIEnv * env, jobject /*thiz*/,
         return JNI_FALSE;
     }
 
+    // pastikan tidak ada adapter nyangkut
+    applyLorasLocked();
+
     LOGI("Model loaded OK");
     return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_akijus_offlinellm_LlamaEngine_addLora(JNIEnv * env, jobject /*thiz*/, jstring jpath, jfloat jscale) {
+    if (!g_model || !g_ctx) {
+        LOGE("addLora: model belum di-load");
+        return JNI_FALSE;
+    }
+    const char * cpath = env->GetStringUTFChars(jpath, nullptr);
+    std::string path = cpath ? cpath : "";
+    if (cpath) env->ReleaseStringUTFChars(jpath, cpath);
+    if (path.empty()) return JNI_FALSE;
+
+    float scale = (float) jscale;
+    if (scale < -2.0f) scale = -2.0f;
+    if (scale >  2.0f) scale =  2.0f;
+    if (scale == 0.0f) scale = 1.0f;
+
+    llama_adapter_lora * ad = llama_adapter_lora_init(g_model, path.c_str());
+    if (!ad) {
+        LOGE("llama_adapter_lora_init failed: %s", path.c_str());
+        return JNI_FALSE;
+    }
+    g_loras.push_back(ad);
+    g_loraScales.push_back(scale);
+
+    if (!applyLorasLocked()) {
+        LOGE("apply after addLora failed, rollback last");
+        llama_adapter_lora_free(ad);
+        g_loras.pop_back();
+        g_loraScales.pop_back();
+        applyLorasLocked();
+        return JNI_FALSE;
+    }
+    LOGI("LoRA added OK (%zu adapters): %s scale=%.2f", g_loras.size(), path.c_str(), scale);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_akijus_offlinellm_LlamaEngine_removeLora(JNIEnv * /*env*/, jobject /*thiz*/, jint jindex) {
+    int idx = (int) jindex;
+    if (idx < 0 || idx >= (int) g_loras.size()) return JNI_FALSE;
+    if (g_loras[idx]) llama_adapter_lora_free(g_loras[idx]);
+    g_loras.erase(g_loras.begin() + idx);
+    g_loraScales.erase(g_loraScales.begin() + idx);
+    return applyLorasLocked() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_com_akijus_offlinellm_LlamaEngine_clearLoras(JNIEnv * /*env*/, jobject /*thiz*/) {
+    freeLorasLocked();
+    applyLorasLocked();
+}
+
+JNIEXPORT jint JNICALL
+Java_com_akijus_offlinellm_LlamaEngine_getLoraCount(JNIEnv * /*env*/, jobject /*thiz*/) {
+    return (jint) g_loras.size();
 }
 
 JNIEXPORT jstring JNICALL
@@ -185,6 +274,9 @@ Java_com_akijus_offlinellm_LlamaEngine_generateReply(JNIEnv * env, jobject /*thi
 JNIEXPORT void JNICALL
 Java_com_akijus_offlinellm_LlamaEngine_releaseModel(JNIEnv * /*env*/, jobject /*thiz*/) {
     if (g_ctx)   { llama_free(g_ctx);       g_ctx = nullptr; }
+    // adapters ikut ke-free bersama model, jadi kosongkan vektor tanpa double-free
+    // tapi kalau masih ada yang belum di-free manual, free dulu sebelum free model
+    freeLorasLocked();
     if (g_model) { llama_model_free(g_model); g_model = nullptr; g_vocab = nullptr; }
 }
 
