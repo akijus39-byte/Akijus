@@ -44,7 +44,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="12dp"
-                android:text="Akijus Offline LLM"
+                android:text="Atlan"
                 android:textColor="#F0F6FC"
                 android:textSize="17sp"
                 android:textStyle="bold"
@@ -148,11 +148,17 @@
     </androidx.constraintlayout.widget.ConstraintLayout>
 
     <!-- PANEL PENGATURAN SAMPING KIRI (TERBUKA DARI GARIS TIGA) -->
-    <LinearLayout
-        android:id="@+id/navDrawerPanel"
+    <ScrollView
         android:layout_width="290dp"
         android:layout_height="match_parent"
         android:layout_gravity="start"
+        android:background="#161B22"
+        android:fillViewport="true">
+
+    <LinearLayout
+        android:id="@+id/navDrawerPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:background="#161B22"
         android:orientation="vertical"
         android:padding="16dp">
@@ -214,6 +220,62 @@
             android:background="#30363D" />
 
         <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LoRA Adapters"
+            android:textColor="#F0F6FC"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvLoraInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="LoRA: 0 terpasang"
+            android:textColor="#8B949E"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:id="@+id/loraListCtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAddLora"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="10dp"
+            android:text="TAMBAH LORA"
+            android:textColor="#E6EDF3"
+            android:textSize="12sp"
+            app:backgroundTint="#21262D"
+            app:cornerRadius="12dp"
+            app:strokeColor="#30363D"
+            app:strokeWidth="1dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClearLora"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="10dp"
+            android:text="HAPUS SEMUA LORA"
+            android:textColor="#F85149"
+            android:textSize="12sp"
+            app:backgroundTint="#21262D"
+            app:cornerRadius="12dp"
+            app:strokeColor="#F85149"
+            app:strokeWidth="1dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="16dp"
+            android:background="#30363D" />
+
+        <TextView
             android:id="@+id/tvHistoryInfo"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -235,5 +297,6 @@
             app:strokeWidth="1dp" />
 
     </LinearLayout>
+    </ScrollView>
 
 </androidx.drawerlayout.widget.DrawerLayout>
