@@ -30,7 +30,7 @@
                 android:insetTop="0dp"
                 android:insetBottom="0dp"
                 android:padding="0dp"
-                android:text="&#9776;"
+                android:text="MENU"
                 android:textColor="#F0F6FC"
                 android:textSize="18sp"
                 app:backgroundTint="#21262D"
@@ -93,7 +93,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
                         android:lineSpacingExtra="5dp"
-                        android:text="Belum ada percakapan. Buka menu &#9776; di kiri atas untuk memilih dan me-load model."
+                        android:text="Belum ada percakapan. Buka menu di kiri atas untuk memilih dan me-load model."
                         android:textColor="#E6EDF3"
                         android:textIsSelectable="true"
                         android:textSize="14sp" />
@@ -262,6 +262,84 @@
             android:layout_height="44dp"
             android:layout_marginTop="10dp"
             android:text="HAPUS SEMUA LORA"
+            android:textColor="#F85149"
+            android:textSize="12sp"
+            app:backgroundTint="#21262D"
+            app:cornerRadius="12dp"
+            app:strokeColor="#F85149"
+            app:strokeWidth="1dp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginVertical="16dp"
+            android:background="#30363D" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Pustaka"
+            android:textColor="#F0F6FC"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvModeInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Mode: Ketat (hanya dari buku)"
+            android:textColor="#8B949E"
+            android:textSize="12sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnModeToggle"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="10dp"
+            android:text="UBAH KE BEBAS"
+            android:textColor="#E6EDF3"
+            android:textSize="12sp"
+            app:backgroundTint="#21262D"
+            app:cornerRadius="12dp"
+            app:strokeColor="#30363D"
+            app:strokeWidth="1dp" />
+
+        <TextView
+            android:id="@+id/tvBookInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="Buku: 0 aktif"
+            android:textColor="#8B949E"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:id="@+id/bookListCtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnAddBook"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="10dp"
+            android:text="TAMBAH BUKU (TXT)"
+            android:textColor="#E6EDF3"
+            android:textSize="12sp"
+            app:backgroundTint="#21262D"
+            app:cornerRadius="12dp"
+            app:strokeColor="#30363D"
+            app:strokeWidth="1dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClearBooks"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="10dp"
+            android:text="HAPUS SEMUA BUKU"
             android:textColor="#F85149"
             android:textSize="12sp"
             app:backgroundTint="#21262D"
