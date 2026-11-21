@@ -34,9 +34,120 @@ class MainActivity : AppCompatActivity() {
     private var modelLoaded = false
     private var selectedPath: String? = null
 
-    // history: list of (role, text), max 20 pesan
-    private val history = mutableListOf<Pair<String, String>>()
-    private val maxHistory = 20
+    // Riwayat = daftar obrolan per model (1x obrolan baru = 1 riwayat).
+    // Disimpan permanen di SharedPreferences (JSON), bukan cuma di RAM.
+    data class Conv(val id: String, var title: String?, var ts: Long, val messages: MutableList<Pair<String, String>>)
+    inner class ConvLib {
+        val convs = mutableListOf<Conv>()
+        var activeId: String? = null
+    }
+    private val libs = mutableMapOf<String, ConvLib>()
+    private val maxConvs = 20
+    private val maxMsgPerConv = 100
+    private var renderedConvId: String? = null
+    private var renderedCount = 0
+
+    private fun uid(): String =
+        "c" + System.currentTimeMillis().toString(36) + (Math.random() * 1000000).toLong().toString(36)
+
+    // Kunci slot = per model. Belum pilih model = slot default.
+    private fun historyKey(): String = "model::" + (selectedPath ?: "default")
+
+    private fun activeLib(): ConvLib = libs.getOrPut(historyKey()) { ConvLib() }
+
+    private fun getConv(lib: ConvLib, id: String): Conv? = lib.convs.firstOrNull { it.id == id }
+
+    private fun activeConv(): Conv {
+        val lib = activeLib()
+        var c = lib.activeId?.let { getConv(lib, it) }
+        if (c == null) {
+            c = lib.convs.lastOrNull { it.messages.isNotEmpty() }
+            if (c == null) {
+                // draf kosong: belum dihitung sebagai riwayat sampai ada pesan pertama
+                c = Conv(uid(), null, System.currentTimeMillis(), mutableListOf())
+                lib.convs.add(c)
+            }
+            lib.activeId = c.id
+        }
+        return c
+    }
+
+    private fun savedConvs(): List<Conv> = activeLib().convs.filter { it.messages.isNotEmpty() }
+
+    private fun trimLib(lib: ConvLib) {
+        val saved = lib.convs.filter { it.messages.isNotEmpty() }
+        if (saved.size <= maxConvs) return
+        val drop = saved.sortedBy { it.ts }.take(saved.size - maxConvs).filter { it.id != lib.activeId }
+        lib.convs.removeAll(drop)
+    }
+
+    private fun saveLibs() {
+        try {
+            val root = JSONObject()
+            for ((k, lib) in libs) {
+                val lc = JSONObject()
+                val arr = JSONArray()
+                for (c in lib.convs) {
+                    val o = JSONObject()
+                    o.put("id", c.id)
+                    o.put("title", c.title ?: "")
+                    o.put("ts", c.ts)
+                    val m = JSONArray()
+                    for ((r, t) in c.messages) {
+                        val mi = JSONArray()
+                        mi.put(r)
+                        mi.put(t)
+                        m.put(mi)
+                    }
+                    o.put("messages", m)
+                    arr.put(o)
+                }
+                lc.put("convs", arr)
+                lc.put("activeId", lib.activeId ?: "")
+                root.put(k, lc)
+            }
+            getSharedPreferences("atlan-history", MODE_PRIVATE).edit().putString("libs_v3", root.toString()).apply()
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun loadLibs() {
+        try {
+            val s = getSharedPreferences("atlan-history", MODE_PRIVATE).getString("libs_v3", null) ?: return
+            val root = JSONObject(s)
+            val keys = root.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                val lc = root.getJSONObject(k)
+                val lib = ConvLib()
+                val arr = lc.optJSONArray("convs") ?: JSONArray()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val msgs = mutableListOf<Pair<String, String>>()
+                    val m = o.optJSONArray("messages") ?: JSONArray()
+                    for (j in 0 until m.length()) {
+                        val mi = m.getJSONArray(j)
+                        val r = mi.optString(0)
+                        val t = mi.optString(1)
+                        if ((r == "Kamu" || r == "AI") && t.isNotEmpty()) msgs.add(r to t)
+                    }
+                    val t0 = o.optString("title")
+                    lib.convs.add(
+                        Conv(
+                            o.optString("id").ifBlank { uid() },
+                            t0.ifBlank { null },
+                            o.optLong("ts", System.currentTimeMillis()),
+                            msgs.takeLast(maxMsgPerConv).toMutableList()
+                        )
+                    )
+                }
+                val aid = lc.optString("activeId")
+                lib.activeId = if (lib.convs.any { it.id == aid }) aid else null
+                libs[k] = lib
+            }
+        } catch (_: Exception) {
+        }
+    }
 
     // LoRA: bisa banyak
     private val loraFiles = mutableListOf<LoraItem>()
@@ -67,6 +178,10 @@ class MainActivity : AppCompatActivity() {
             selectedPath = dst.absolutePath
             binding.tvSelectedModel.text = "File: " + dst.absolutePath
             setStatus("Status: file dipilih, klik LOAD MODEL", "Belum di-load")
+            // ganti model = ganti slot riwayat
+            renderedConvId = null
+            updateChatUI()
+            saveLibs()
             toast("Disalin ke: " + dst.absolutePath)
         } catch (e: Exception) {
             toast("Gagal salin file: " + e.message)
@@ -240,12 +355,37 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnClearHistory.setOnClickListener {
-            history.clear()
+            val lib = activeLib()
+            if (savedConvs().isEmpty()) {
+                toast("Riwayat sudah kosong.")
+                return@setOnClickListener
+            }
+            lib.convs.clear()
+            lib.activeId = null
+            renderedConvId = null
             updateChatUI()
+            saveLibs()
             toast("Riwayat telah dihapus.")
             binding.drawerLayout.closeDrawer(GravityCompat.START)
         }
 
+        binding.btnNewChat.setOnClickListener {
+            val lib = activeLib()
+            val cur = lib.activeId?.let { getConv(lib, it) }
+            if (cur == null || cur.messages.isEmpty()) {
+                binding.drawerLayout.closeDrawer(GravityCompat.START)
+                return@setOnClickListener
+            }
+            val nc = Conv(uid(), null, System.currentTimeMillis(), mutableListOf())
+            lib.convs.add(nc)
+            lib.activeId = nc.id
+            renderedConvId = null
+            updateChatUI()
+            saveLibs()
+            binding.drawerLayout.closeDrawer(GravityCompat.START)
+        }
+
+        loadLibs()
         updateChatUI()
         updateLoraUI()
         updateModeUI()
@@ -464,9 +604,10 @@ class MainActivity : AppCompatActivity() {
             sb.append(hits.joinToString("\n---\n").take(1200))
             sb.append("\n\n")
         }
-        val start = maxOf(0, history.size - 6)
-        for (i in start until history.size) {
-            val (role, text) = history[i]
+        val msgs = activeConv().messages
+        val start = maxOf(0, msgs.size - 6)
+        for (i in start until msgs.size) {
+            val (role, text) = msgs[i]
             if (role == "Kamu") sb.append("User: ").append(text.take(300)).append("\n")
             else sb.append("Asisten: ").append(text.take(300)).append("\n")
         }
@@ -633,32 +774,87 @@ class MainActivity : AppCompatActivity() {
 
     // ---------- Chat ----------
 
-    private fun buildPrompt(current: String): String {
-        val sb = StringBuilder()
-        val start = maxOf(0, history.size - 8)
-        for (i in start until history.size) {
-            val (role, text) = history[i]
-            if (role == "Kamu") sb.append("User: ").append(text).append("\n")
-            else sb.append("Asisten: ").append(text).append("\n")
-        }
-        sb.append("User: ").append(current).append("\nAsisten:")
-        return sb.toString()
-    }
-
     private fun addMessage(role: String, text: String) {
-        history.add(role to text)
-        while (history.size > maxHistory) history.removeAt(0)
+        val lib = activeLib()
+        val conv = activeConv()
+        if (role == "Kamu" && conv.messages.isEmpty()) {
+            conv.title = if (text.length > 36) text.take(36) + "…" else text
+            conv.ts = System.currentTimeMillis()
+        }
+        conv.messages.add(role to text)
+        while (conv.messages.size > maxMsgPerConv) conv.messages.removeAt(0)
+        trimLib(lib)
         updateChatUI()
+        saveLibs()
     }
 
     private fun updateChatUI() {
-        binding.chatListCtn.removeAllViews()
-        binding.chatCard.visibility = if (history.isEmpty()) View.GONE else View.VISIBLE
-        for ((role, text) in history) {
-            binding.chatListCtn.addView(if (role == "Kamu") userBubble(text) else aiBubble(text))
+        val conv = activeConv()
+        val box = binding.chatListCtn
+        // buang indikator mengetik bila masih ada (anti-kedip: sisanya ditambah, bukan dirombak)
+        box.findViewWithTag<View>("typing")?.let { box.removeView(it) }
+        if (renderedConvId != conv.id || renderedCount > conv.messages.size) {
+            box.removeAllViews()
+            renderedConvId = conv.id
+            renderedCount = 0
         }
-        binding.tvHistoryInfo.text = "Riwayat disimpan: ${history.size} / $maxHistory"
+        for (i in renderedCount until conv.messages.size) {
+            val (role, text) = conv.messages[i]
+            box.addView(if (role == "Kamu") userBubble(text) else aiBubble(text))
+        }
+        renderedCount = conv.messages.size
+        binding.chatCard.visibility = if (conv.messages.isEmpty()) View.GONE else View.VISIBLE
+        renderConvList()
         binding.scrollChat.post { binding.scrollChat.fullScroll(android.view.View.FOCUS_DOWN) }
+    }
+
+    private fun renderConvList() {
+        binding.convListCtn.removeAllViews()
+        val lib = activeLib()
+        val list = savedConvs().sortedByDescending { it.ts }
+        for (c in list) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            val t = Button(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                text = c.title ?: "Percakapan"
+                alpha = if (c.id == lib.activeId) 1f else 0.6f
+                setOnClickListener { openConv(c.id) }
+            }
+            val x = Button(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                text = "×"
+                setOnClickListener { deleteConv(c.id) }
+            }
+            row.addView(t)
+            row.addView(x)
+            binding.convListCtn.addView(row)
+        }
+        binding.tvHistoryInfo.text = "Riwayat disimpan: ${savedConvs().size} / $maxConvs"
+    }
+
+    private fun openConv(id: String) {
+        val lib = activeLib()
+        if (getConv(lib, id) == null) return
+        lib.activeId = id
+        renderedConvId = null
+        updateChatUI()
+        saveLibs()
+        binding.drawerLayout.closeDrawer(GravityCompat.START)
+    }
+
+    private fun deleteConv(id: String) {
+        val lib = activeLib()
+        lib.convs.removeAll { it.id == id }
+        if (lib.activeId == id) lib.activeId = null
+        renderedConvId = null
+        updateChatUI()
+        saveLibs()
     }
 
     private fun dp(n: Int): Int = (n * resources.displayMetrics.density).toInt()
