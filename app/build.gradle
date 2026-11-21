@@ -30,6 +30,9 @@ android {
         cmake {
             path "src/main/cpp/CMakeLists.txt"
             version "3.22.1"
+            // Native WAJIB Release (optimasi -O3) walau APK debug:
+            // build Debug tanpa ini 5-10x lebih lambat di HP.
+            arguments "-DCMAKE_BUILD_TYPE=Release"
         }
     }
 
