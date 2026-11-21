@@ -1,7 +1,13 @@
 package com.akijus.offlinellm
 
+import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.view.Gravity
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -11,6 +17,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+
+data class LoraItem(val path: String, val name: String, val scale: Float = 1.0f)
 
 class MainActivity : AppCompatActivity() {
 
@@ -23,6 +31,9 @@ class MainActivity : AppCompatActivity() {
     // history: list of (role, text), max 20 pesan
     private val history = mutableListOf<Pair<String, String>>()
     private val maxHistory = 20
+
+    // LoRA: bisa banyak
+    private val loraFiles = mutableListOf<LoraItem>()
 
     private val pickGguf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@registerForActivityResult
@@ -39,6 +50,16 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             toast("Gagal salin file: " + e.message)
         }
+    }
+
+    private val pickLoras = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        if (uris.isEmpty()) return@registerForActivityResult
+        var added = 0
+        for (uri in uris) {
+            if (addLoraFromUri(uri)) added++
+        }
+        updateLoraUI()
+        if (added > 0) toast("$added LoRA ditambahkan")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,11 +87,17 @@ class MainActivity : AppCompatActivity() {
             bg.execute {
                 try {
                     val ok = engine.initModel(path)
+                    if (ok) {
+                        // pasang ulang semua LoRA setelah model di-load
+                        for (l in loraFiles) {
+                            engine.addLora(l.path, l.scale)
+                        }
+                    }
                     modelLoaded = ok
                     runOnUiThread {
                         setBusy(false)
                         binding.tvStatus.text =
-                            if (ok) "Status: model OK"
+                            if (ok) "Status: model OK" + (if (loraFiles.isNotEmpty()) " + ${loraFiles.size} LoRA" else "")
                             else "Status: GAGAL load model. Cek file .gguf (butuh 1-2 GB RAM bebas)."
                         if (!ok) toast("Gagal load model")
                         else binding.drawerLayout.closeDrawer(GravityCompat.START)
@@ -82,6 +109,20 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+        }
+
+        binding.btnAddLora.setOnClickListener {
+            pickLoras.launch(arrayOf("*/*"))
+        }
+
+        binding.btnClearLora.setOnClickListener {
+            loraFiles.clear()
+            bg.execute {
+                runCatching { engine.clearLoras() }
+                runOnUiThread { updateLoraUI() }
+            }
+            updateLoraUI()
+            toast("Semua LoRA dihapus")
         }
 
         binding.btnGenerate.setOnClickListener {
@@ -118,11 +159,96 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnClearHistory.setOnClickListener {
             history.clear()
-            updateChatUI()
-            toast("Riwayat dihapus")
+            binding.tvOutput.text = "Riwayat telah dihapus."
+            binding.tvHistoryInfo.text = "Riwayat disimpan: 0 / $maxHistory pesan"
+            binding.drawerLayout.closeDrawer(GravityCompat.START)
         }
 
         updateChatUI()
+        updateLoraUI()
+    }
+
+    private fun addLoraFromUri(uri: Uri): Boolean {
+        return try {
+            val dispName = queryDisplayName(uri) ?: ("lora-" + System.currentTimeMillis() + ".bin")
+            val safeName = dispName.replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80)
+            val dir = File(filesDir, "loras").apply { mkdirs() }
+            var dst = File(dir, safeName)
+            if (dst.exists()) dst = File(dir, System.currentTimeMillis().toString() + "_" + safeName)
+            contentResolver.openInputStream(uri)?.use { ins ->
+                FileOutputStream(dst).use { out -> ins.copyTo(out) }
+            }
+            val item = LoraItem(dst.absolutePath, dst.name, 1.0f)
+            loraFiles.add(item)
+            if (modelLoaded) {
+                bg.execute {
+                    val ok = try { engine.addLora(item.path, item.scale) } catch (_: Exception) { false }
+                    runOnUiThread {
+                        if (!ok) toast("LoRA tersimpan tapi gagal dipasang: " + item.name)
+                        updateLoraUI()
+                    }
+                }
+            }
+            true
+        } catch (e: Exception) {
+            toast("Gagal tambah LoRA: " + e.message)
+            false
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        var cur: Cursor? = null
+        return try {
+            cur = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            if (cur != null && cur.moveToFirst()) cur.getString(0) else null
+        } catch (_: Exception) {
+            null
+        } finally {
+            cur?.close()
+        }
+    }
+
+    private fun updateLoraUI() {
+        binding.tvLoraInfo.text = "LoRA: ${loraFiles.size} terpasang" + (if (modelLoaded) "" else " (aktif setelah LOAD MODEL)")
+        binding.loraListCtn.removeAllViews()
+        for ((idx, item) in loraFiles.withIndex()) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 6, 0, 6)
+            }
+            val tv = TextView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                text = "${idx + 1}. ${item.name}"
+                setTextColor(0xFFC9D1D9.toInt())
+                textSize = 12f
+            }
+            val btn = Button(this).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                text = "X"
+                setOnClickListener { removeLoraAt(idx) }
+            }
+            row.addView(tv)
+            row.addView(btn)
+            binding.loraListCtn.addView(row)
+        }
+    }
+
+    private fun removeLoraAt(idx: Int) {
+        if (idx < 0 || idx >= loraFiles.size) return
+        loraFiles.removeAt(idx)
+        // sinkron ulang native: clear lalu pasang ulang sisanya ( Hindari bug index)
+        bg.execute {
+            runCatching {
+                engine.clearLoras()
+                for (l in loraFiles) engine.addLora(l.path, l.scale)
+            }
+            runOnUiThread { updateLoraUI() }
+        }
+        updateLoraUI()
     }
 
     private fun buildPrompt(current: String): String {
@@ -163,6 +289,7 @@ class MainActivity : AppCompatActivity() {
         binding.btnGenerate.isEnabled = !busy
         binding.btnLoadModel.isEnabled = !busy
         binding.btnPickFile.isEnabled = !busy
+        binding.btnAddLora.isEnabled = !busy
         binding.btnGenerate.text = if (busy && generating) "..." else "KIRIM"
         if (busy && generating) {
             binding.tvOutput.text = binding.tvOutput.text.toString() + "\n\nAI:\n\u23F3 generating..."
