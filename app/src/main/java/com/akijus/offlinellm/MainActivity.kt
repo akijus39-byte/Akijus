@@ -10,6 +10,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -956,13 +957,15 @@ class MainActivity : AppCompatActivity() {
         binding.btnAddBook.isEnabled = !busy
         binding.btnGenerate.text = if (busy && generating) "..." else "↑"
         if (busy && generating) {
-            val tv = TextView(this).apply {
+            // Animasi simpel saja (spinner kecil), tanpa tulisan apa pun
+            val row = LinearLayout(this).apply {
                 tag = "typing"
-                text = "AI:\nMenjawab..."
-                setTextColor(0xFFC3CCD9.toInt())
-                textSize = 14f
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(4), dp(4), dp(4), dp(4))
             }
-            binding.chatListCtn.addView(tv)
+            row.addView(ProgressBar(this, null, android.R.attr.progressBarStyleSmall))
+            binding.chatListCtn.addView(row)
             binding.scrollChat.post { binding.scrollChat.fullScroll(android.view.View.FOCUS_DOWN) }
         }
     }
