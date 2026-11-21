@@ -1,6 +1,8 @@
 #include <jni.h>
 #include <string>
 #include <vector>
+#include <chrono>
+#include <thread>
 #include <android/log.h>
 
 #include "llama.h"
@@ -87,7 +89,12 @@ Java_com_akijus_offlinellm_LlamaEngine_initModel(JNIEnv * env, jobject /*thiz*/,
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx   = 2048;
     cparams.n_batch = 512;
-    cparams.n_threads = 4;
+    // Pakai CPU yang tersedia (kurangi 2 untuk UI), minimal 2 thread.
+    // Penting untuk HP: thread lebih banyak = jawaban jauh lebih cepat.
+    int hw = (int) std::thread::hardware_concurrency();
+    if (hw < 2) hw = 2;
+    cparams.n_threads = hw > 4 ? hw - 2 : hw;
+    if (cparams.n_threads < 2) cparams.n_threads = 2;
 
     // API terbaru llama.cpp: llama_init_from_model (pengganti llama_new_context_with_model)
     g_ctx = llama_init_from_model(g_model, cparams);
@@ -176,11 +183,27 @@ Java_com_akijus_offlinellm_LlamaEngine_generateReply(JNIEnv * env, jobject /*thi
     if (max_tokens <= 0)   max_tokens = 128;
     if (max_tokens > 1024) max_tokens = 1024;
 
-    // 1. Tokenize prompt
-    const int n_prompt_max = (int) prompt.size() + 256;
+    // 1. Terapkan chat template bawaan model (wajib untuk model instruct
+    // seperti Qwen: tanpa ini model sering langsung EOS / ngaco)
+    std::string formatted;
+    {
+        llama_chat_message msgs[1];
+        msgs[0].role = "user";
+        msgs[0].content = prompt.c_str();
+        int32_t need = llama_chat_apply_template(g_model, nullptr, msgs, 1, true, nullptr, 0);
+        if (need > 0 && need < 32768) {
+            std::vector<char> buf((size_t) need + 1);
+            int32_t n = llama_chat_apply_template(g_model, nullptr, msgs, 1, true, buf.data(), (int32_t) buf.size());
+            if (n > 0) formatted.assign(buf.data(), (size_t) n);
+        }
+        if (formatted.empty()) formatted = prompt; // fallback: prompt mentah
+    }
+
+    // 2. Tokenize prompt (yang sudah diformat template)
+    const int n_prompt_max = (int) formatted.size() + 256;
     std::vector<llama_token> prompt_tokens(n_prompt_max);
     bool add_bos = llama_vocab_get_add_bos(g_vocab);
-    int n_prompt = llama_tokenize(g_vocab, prompt.c_str(), (int) prompt.size(),
+    int n_prompt = llama_tokenize(g_vocab, formatted.c_str(), (int) formatted.size(),
                                   prompt_tokens.data(), (int) prompt_tokens.size(),
                                   add_bos, true);
     if (n_prompt < 0) {
@@ -189,10 +212,16 @@ Java_com_akijus_offlinellm_LlamaEngine_generateReply(JNIEnv * env, jobject /*thi
     }
     prompt_tokens.resize(n_prompt);
 
-    // 2. Sampler greedy
+    // 3. Sampler suhu (bukan greedy): tidak gampang macet di pengulangan,
+    // jawaban berhenti wajar di token akhir
+    uint32_t seed = (uint32_t) std::chrono::system_clock::now().time_since_epoch().count();
     llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
     llama_sampler * sampler = llama_sampler_chain_init(sparams);
-    llama_sampler_chain_add(sampler, llama_sampler_init_greedy());
+    llama_sampler_chain_add(sampler, llama_sampler_init_top_k(40));
+    llama_sampler_chain_add(sampler, llama_sampler_init_top_p(0.9f, 1));
+    llama_sampler_chain_add(sampler, llama_sampler_init_min_p(0.05f, 1));
+    llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.7f));
+    llama_sampler_chain_add(sampler, llama_sampler_init_dist(seed));
 
     std::string out;
     std::vector<llama_token> batch_tokens;
