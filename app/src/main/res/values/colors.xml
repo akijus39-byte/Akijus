@@ -3,4 +3,21 @@
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>
     <color name="teal_200">#FF03DAC5</color>
+
+    <!-- Palet premium Atlan (disamakan dengan UI web) -->
+    <color name="atlan_bg">#FF0B0E15</color>
+    <color name="atlan_panel">#FF121724</color>
+    <color name="atlan_panel2">#FF1A2130</color>
+    <color name="atlan_border">#FF262F42</color>
+    <color name="atlan_text">#FFF4F7FC</color>
+    <color name="atlan_text2">#FFC3CCD9</color>
+    <color name="atlan_muted">#FF8B94A7</color>
+    <color name="atlan_violet">#FFA371F7</color>
+    <color name="atlan_violet2">#FF7C4DFF</color>
+    <color name="atlan_cyan">#FF5CC8F5</color>
+    <color name="atlan_red">#FFFF6B61</color>
+    <color name="atlan_green">#FF3FB950</color>
+    <color name="atlan_drawer">#FF0E1220</color>
+    <color name="bubble_user">#FF232936</color>
+    <color name="bubble_user_border">#FF2E3648</color>
 </resources>
