@@ -26,10 +26,18 @@ jobs:
 
       - name: Install Android SDK packages & NDK
         run: |
-          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          echo "Using SDK_ROOT=$SDK_ROOT"
-          yes | sdkmanager --sdk_root="$SDK_ROOT" --licenses > /dev/null || true
-          sdkmanager --sdk_root="$SDK_ROOT" \
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
+          mkdir -p "$SDK_ROOT/cmdline-tools"
+          SDKMANAGER=$(find "$SDK_ROOT" -name "sdkmanager" -type f 2>/dev/null | head -n 1)
+          if [ -z "$SDKMANAGER" ]; then
+            curl -fsSL https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o /tmp/cmdline.zip
+            unzip -q /tmp/cmdline.zip -d /tmp/cmdline_extract
+            mv /tmp/cmdline_extract/cmdline-tools "$SDK_ROOT/cmdline-tools/latest"
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          chmod +x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses > /dev/null || true
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0" \
