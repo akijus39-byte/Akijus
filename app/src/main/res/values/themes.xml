@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Akijus" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+    <style name="Theme.Akijus" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/purple_500</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>
         <item name="colorOnPrimary">@android:color/white</item>
         <item name="colorSecondary">@color/teal_200</item>
+        <!-- Samakan bar sistem dengan background app + ikon terang -->
+        <item name="android:statusBarColor">@color/atlan_bg</item>
+        <item name="android:navigationBarColor">@color/atlan_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>
