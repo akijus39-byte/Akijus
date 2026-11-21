@@ -207,6 +207,19 @@
             android:textColor="@color/atlan_muted"
             android:textSize="11sp" />
 
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnNewChat"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="14dp"
+            android:text="+ CHAT BARU"
+            android:textColor="@color/atlan_text"
+            android:textSize="12sp"
+            app:backgroundTint="@color/atlan_panel2"
+            app:cornerRadius="24dp"
+            app:strokeColor="@color/atlan_border"
+            app:strokeWidth="1dp" />
+
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -431,6 +444,13 @@
             android:text="Riwayat disimpan: 0 / 20"
             android:textColor="@color/atlan_muted"
             android:textSize="12sp" />
+
+        <LinearLayout
+            android:id="@+id/convListCtn"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnClearHistory"
